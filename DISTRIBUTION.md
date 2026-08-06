@@ -10,19 +10,21 @@ As of today, ClaudeGauge has **no paid Apple Developer Program membership**. Tha
 
 - **Signing**: The app and the `ClaudeGaugeWidget` extension build and run using a free/personal Apple ID team. `xcodebuild -allowProvisioningUpdates` (or a normal Xcode "Run") successfully builds, signs, and embeds the widget extension locally on the machine that built it.
 - **Certificate lifetime**: Free personal-team code-signing certificates expire after **7 days**. This is a known Xcode limitation for free accounts, not a ClaudeGauge bug — you will need to re-open Xcode and let it re-sign periodically if you leave a build sitting untouched.
-- **No notarization**: There is no Developer ID Application certificate, so there is no notarized build. Gatekeeper will show an "unidentified developer" warning for anyone other than the person who built it locally.
-- **No DMG / no release artifact**: There is nothing published under GitHub Releases. There is no signed `.dmg` today.
-- **No Homebrew cask**: `brew install --cask claudegauge` does not exist. There is no `homebrew-cask` PR, no tap.
+- **No notarization, and Gatekeeper's response is stricter than a soft warning**: There is no Developer ID Application certificate, so there is no notarized build. Verified with `spctl -a -vvv` against an actual built `.app`: the personal-team ("Apple Development") signature is **rejected outright** by Gatekeeper's policy check — this is not the milder "unidentified developer, right-click to open" tier that a Developer ID-signed-but-unnotarized app would get. The only reliable bypass is **System Settings → Privacy & Security → Open Anyway** (after a first blocked launch attempt), or removing the quarantine attribute directly (`xattr -d com.apple.quarantine`).
+- **A DMG and Homebrew cask do exist** ([GitHub Releases](https://github.com/Bajnok11/ClaudeGauge/releases), [Bajnok11/homebrew-claudegauge](https://github.com/Bajnok11/homebrew-claudegauge)) — built via `Scripts/build-dmg.sh`, with the same free-team signing described above. The Homebrew cask's `postflight` step removes the quarantine attribute automatically after install, which sidesteps the Gatekeeper rejection for anyone installing that way; the raw DMG does not, so manual downloaders need the System Settings step above. Neither is notarized.
 - **No Mac App Store listing**: ClaudeGauge is not, and is not currently planned to be, distributed through the Mac App Store (Developer ID / notarized distribution outside the App Store is the intended path, because `MenuBarExtra` + `LSUIElement` + WidgetKit + App Group all work fine outside the Store and Store review adds friction for a hobby/OSS project).
 
-**Running ClaudeGauge today means building it yourself:**
+**Three ways to run ClaudeGauge today:**
 
-1. Clone the repo.
-2. Install [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`) if you don't have it.
-3. Run `xcodegen generate` from the repo root to produce `ClaudeGauge.xcodeproj` (the `.xcodeproj` is not committed — `project.yml` is the source of truth).
-4. Open the project in Xcode.
-5. In **Signing & Capabilities**, select your own personal Team for **both** the `ClaudeGauge` and `ClaudeGaugeWidget` targets (the committed `project.yml` intentionally ships without a hardcoded `DEVELOPMENT_TEAM` so it stays portable across contributors' own accounts).
-6. Run. Expect to re-sign every ~7 days if you're using a free account.
+- `brew tap Bajnok11/claudegauge && brew install --cask claudegauge` (handles the Gatekeeper issue for you)
+- Download the DMG from [Releases](https://github.com/Bajnok11/ClaudeGauge/releases) and follow the Gatekeeper override steps above
+- Build it yourself:
+  1. Clone the repo.
+  2. Install [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`) if you don't have it.
+  3. Run `xcodegen generate` from the repo root to produce `ClaudeGauge.xcodeproj` (the `.xcodeproj` is not committed — `project.yml` is the source of truth).
+  4. Open the project in Xcode.
+  5. In **Signing & Capabilities**, select your own personal Team for **both** the `ClaudeGauge` and `ClaudeGaugeWidget` targets (the committed `project.yml` intentionally ships without a hardcoded `DEVELOPMENT_TEAM` so it stays portable across contributors' own accounts).
+  6. Run. Expect to re-sign every ~7 days if you're using a free account. (A locally-built app has no quarantine flag at all, so Gatekeeper never blocks it in the first place — this is why the workaround above is only needed for downloaded artifacts.)
 
 Everything below is written for the day a paid Apple Developer Program membership ($99/year) exists for the project. Until then, treat it as a checklist/reference, not as something contributors need to do.
 
@@ -56,7 +58,7 @@ Distribution outside the Mac App Store (which is the intended path for ClaudeGau
 
 1. In Xcode: **Settings → Accounts → [Team] → Manage Certificates → +  → Developer ID Application**, or generate it via the portal (**Certificates, Identifiers & Profiles → Certificates → + → Developer ID Application**) using a CSR from Keychain Access.
 2. Confirm it appears in `security find-identity -v -p codesigning` as `"Developer ID Application: <Name> (<TEAM_ID>)"`.
-3. Widget extensions are sandboxed by OS requirement regardless of signing identity — `ClaudeGaugeWidget.entitlements` already has App Sandbox enabled, so no entitlement change is needed there. The main app remains un-sandboxed (it needs to read `~/.claude/.credentials.json` and `~/.claude/projects/**/*.jsonl` directly from disk, which App Sandbox would block without broad file-access entitlements).
+3. Widget extensions are sandboxed by OS requirement regardless of signing identity — `ClaudeGaugeWidget.entitlements` already has App Sandbox enabled, so no entitlement change is needed there. The main app remains un-sandboxed (it needs to read `~/.claude/projects/**/*.jsonl` directly from disk for the local transcript parser, and falls back to reading a legacy `~/.claude/.credentials.json` file when the primary Keychain-based credential lookup finds nothing — both of which App Sandbox would block without broad file-access entitlements).
 
 ### 4. Update `project.yml`
 

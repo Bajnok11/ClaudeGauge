@@ -6,7 +6,7 @@ ClaudeGauge is an unofficial, independent, community project. It is **not affili
 
 - Menu bar app (SwiftUI `MenuBarExtra`, no Dock icon) showing session and weekly Claude usage as two gauges, with a configurable refresh interval (1/5/10/15/30 min).
 - A real WidgetKit desktop / Notification Center widget (small + medium) — not just a menu bar item — sharing one visual design system and one data snapshot with the app via an App Group.
-- Credential-safe data source: reads the same OAuth token the Claude Code CLI already stores at `~/.claude/.credentials.json`, or a manually entered Anthropic API key stored in the Keychain, with no browser cookie scraping.
+- Credential-safe data source: reads the same OAuth token the Claude Code CLI already stores (macOS Keychain on current versions, `~/.claude/.credentials.json` as a fallback on older ones), or a manually entered Anthropic API key stored in the Keychain, with no browser cookie scraping.
 - Usage read from Anthropic's own official rate-limit response headers on a minimal `claude-haiku-4-5-20251001` request — the same signal Claude Code itself relies on. Both header shapes are handled: a subscription's Session/Weekly windows, and a pay-as-you-go API key's Tokens/Requests limits, each labeled correctly rather than assuming everyone is on a subscription.
 - Shared rendering: both the popover and the widget draw through the same `GaugeDial` component and the same status-color rules, so they cannot visually drift apart.
 - `TranscriptLogParser`, a tested-but-not-yet-surfaced local parser that rolls up daily token totals from Claude Code's own JSONL transcript logs on disk.

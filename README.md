@@ -32,17 +32,32 @@ If your priority is broad multi-provider coverage today (Codex, Gemini, Copilot,
 
 ## Requirements
 
-- macOS 14 or later to run the app.
-- [Claude Code](https://claude.com/claude-code) installed and logged in (ClaudeGauge reads its local OAuth credentials at `~/.claude/.credentials.json`), **or** your own Anthropic API key entered manually in Settings.
+- macOS 14 or later to run the app (Sonoma+; the Homebrew cask requires it explicitly).
+- [Claude Code](https://claude.com/claude-code) installed and logged in — ClaudeGauge reads its login automatically (current Claude Code versions store it in the macOS Keychain under `"Claude Code-credentials"`; older versions' plaintext `~/.claude/.credentials.json` is used as a fallback) — **or** your own Anthropic API key entered manually in Settings.
 - To build from source: Xcode 16 or later (developed on Xcode 26.6), and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+
+## Installing
+
+### Homebrew (recommended)
+
+```bash
+brew tap Bajnok11/claudegauge
+brew install --cask claudegauge
+```
+
+### Manually, from a DMG
+
+Download the latest `.dmg` from [Releases](https://github.com/Bajnok11/ClaudeGauge/releases), open it, and drag ClaudeGauge into Applications.
+
+### ⚠️ About the Gatekeeper warning
+
+ClaudeGauge doesn't have a paid Apple Developer Program membership yet (see [Build & signing status](#build--signing-status)), so these builds are signed with a free/personal Apple ID team only — not notarized. **macOS Gatekeeper will reject the app outright on first launch**, not just show a soft "unidentified developer" warning. The Homebrew cask handles this for you automatically (its `postflight` step removes the quarantine flag after install). If you used the manual DMG instead, try opening the app once (it'll be blocked), then go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** — or from Terminal: `xattr -d com.apple.quarantine /Applications/ClaudeGauge.app`.
 
 ## Building from source
 
-There is no downloadable release yet — no signed build, no DMG, no Homebrew cask (see [Build & signing status](#build--signing-status) below). The only way to run ClaudeGauge today is to build it yourself:
-
 ```bash
 # 1. Clone the repo
-git clone https://github.com/<your-username>/ClaudeGauge.git
+git clone https://github.com/Bajnok11/ClaudeGauge.git
 cd ClaudeGauge
 
 # 2. Generate the Xcode project from project.yml (XcodeGen is the source of truth;
@@ -57,6 +72,12 @@ In Xcode, select your own Team under **Signing & Capabilities** for both the `Cl
 
 If you're on a free/personal Apple ID (no paid Apple Developer Program membership), `xcodebuild -allowProvisioningUpdates` will build, sign, and embed the widget extension locally — that's how this project is developed today. Free personal-team certificates expire after 7 days and need re-signing periodically; that's a known Xcode limitation, not a ClaudeGauge bug.
 
+To build a distributable DMG yourself instead of running from Xcode:
+
+```bash
+./Scripts/build-dmg.sh
+```
+
 To run just the core logic tests (no Xcode, no network calls, safe for CI):
 
 ```bash
@@ -66,7 +87,7 @@ swift test
 
 ### Build & signing status
 
-ClaudeGauge builds and runs today via a free/personal Apple ID team. Because there's no paid Apple Developer Program account behind this project yet, there is **no notarized, publicly-distributable build** — no signed DMG, no Homebrew cask, not on the Mac App Store. See [DISTRIBUTION.md](DISTRIBUTION.md) for the exact steps planned for once a paid account is in place.
+ClaudeGauge builds and runs today via a free/personal Apple ID team. Because there's no paid Apple Developer Program account behind this project yet, there is **no notarized build** — the DMG and Homebrew cask above exist and work (see the Gatekeeper note above for what that means in practice), but there's still no Developer ID signature and nothing on the Mac App Store. See [DISTRIBUTION.md](DISTRIBUTION.md) for the exact steps planned for once a paid account is in place.
 
 ## How it reads your usage
 
@@ -90,7 +111,7 @@ Highlights only — full detail and rationale in [ROADMAP.md](ROADMAP.md):
 - **iOS companion app + Live Activity** — not available today; macOS has no direct Live Activity equivalent, so this is planned as a separate iOS app.
 - **Multi-provider support** (Codex, Gemini, etc.) — the provider layer is architected for this, but only Claude ships in v1.
 - **History/Charts view** — a UI for the local token-usage data the transcript parser already collects.
-- **Notarized, signed distribution** (DMG, Homebrew cask) — blocked on a paid Apple Developer account.
+- **Notarized, Developer ID–signed distribution** — a DMG and Homebrew cask already exist ([Installing](#installing)), but blocked on a paid Apple Developer account for the properly signed/notarized version that wouldn't need the current Gatekeeper workaround.
 - **Real app icon and marketing assets** — the current icon slot is an empty placeholder.
 
 ## Contributing

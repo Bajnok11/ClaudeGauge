@@ -107,7 +107,7 @@ macOS enforces an asymmetry here that shapes the entitlements directly:
 | App Group | `group.dev.claudegauge.shared` | `group.dev.claudegauge.shared` |
 | Hardened Runtime | On | On |
 
-**Why the host app is unsandboxed.** `ClaudeRateLimitProvider` needs to read `~/.claude/.credentials.json` (Claude Code CLI's OAuth token file), and `TranscriptLogParser` needs to walk `~/.claude/projects/**/*.jsonl` — both arbitrary paths under the user's home directory that the app was never handed through an `NSOpenPanel` or other user-driven file picker. A sandboxed process can only read paths it was explicitly granted (via `com.apple.security.files.user-selected.read-only`-style entitlements plus an actual picker interaction, or a security-scoped bookmark from a prior picker). There is no sandbox entitlement that grants blanket read access to "anything under `~/.claude/`" without the user manually pointing a file picker at it every session — which would make silent, timer-driven background polling impossible. So `ClaudeGauge.entitlements` carries only the App Group capability and no `app-sandbox` key at all, and free-form `FileManager`/`Data(contentsOf:)` calls in `ClaudeCodeCredentialsReader` and `TranscriptLogParser` work exactly as they would in any other unsandboxed macOS process.
+**Why the host app is unsandboxed.** `TranscriptLogParser` needs to walk `~/.claude/projects/**/*.jsonl`, and `ClaudeRateLimitProvider` needs to read the legacy `~/.claude/.credentials.json` file as a fallback when the primary Keychain-based credential lookup finds nothing (see §4) — both arbitrary paths under the user's home directory that the app was never handed through an `NSOpenPanel` or other user-driven file picker. A sandboxed process can only read paths it was explicitly granted (via `com.apple.security.files.user-selected.read-only`-style entitlements plus an actual picker interaction, or a security-scoped bookmark from a prior picker). There is no sandbox entitlement that grants blanket read access to "anything under `~/.claude/`" without the user manually pointing a file picker at it every session — which would make silent, timer-driven background polling impossible. So `ClaudeGauge.entitlements` carries only the App Group capability and no `app-sandbox` key at all, and free-form `FileManager`/`Data(contentsOf:)` calls in `ClaudeCodeCredentialsReader` and `TranscriptLogParser` work exactly as they would in any other unsandboxed macOS process.
 
 **Why the widget extension must be sandboxed.** This isn't a ClaudeGauge design choice — WidgetKit (like every macOS/iOS app-extension point) requires `com.apple.security.app-sandbox = true` on the extension target as a condition of being loadable at all; an unsandboxed widget extension simply won't run. `ClaudeGaugeWidget.entitlements` reflects that.
 
@@ -117,13 +117,17 @@ macOS enforces an asymmetry here that shapes the entitlements directly:
 
 `ClaudeRateLimitProvider.fetchSnapshot()` resolves credentials fresh on every call, in this order:
 
-1. **`~/.claude/.credentials.json`** — the Claude Code CLI's own OAuth login, read by `ClaudeCodeCredentialsReader.read(from:)`. It handles two schemas so it keeps working across Claude Code versions:
+1. **The Claude Code CLI's own OAuth login**, read by `ClaudeCodeCredentialsReader.read(from:keychainService:)`, which itself tries two places — because where Claude Code stores this has changed across versions, and an earlier version of this reader that only checked the file reported "no credentials found" for anyone on a current Claude Code install, even though they *were* logged in:
+   - **Primary: the macOS Keychain**, service name `"Claude Code-credentials"` — where Claude Code 2.x actually stores it today. Read-only; ClaudeGauge never writes to this entry, it's not ClaudeGauge's to manage.
+   - **Fallback: `~/.claude/.credentials.json`** — the plaintext file older Claude Code releases (and non-macOS installs) used.
+
+   Both locations hold the same JSON shape, handled by the same `parse(data:)`, so it keeps working across that migration and across schema variants:
    - current: nested `{"claudeAiOauth": {"accessToken": "..."}}`
    - legacy flat keys: `claudeAiOauthToken`, `oauthToken`, or `access_token` at the top level
 
-   If found, the token is sent as `Authorization: Bearer <token>` and the resulting snapshot is tagged `.claudeCodeOAuth`.
+   If found (either location), the token is sent as `Authorization: Bearer <token>` and the resulting snapshot is tagged `.claudeCodeOAuth`.
 
-2. **A manually entered Anthropic API key**, stored in the macOS Keychain via `KeychainStore` (`kSecClassGenericPassword`, service `dev.claudegauge.app`, account `anthropic-api-key`) — entered in `SettingsView` and never logged or synced. Used only when step 1 finds nothing; sent as `x-api-key: <token>`, tagged `.manualAPIKey`.
+2. **A manually entered Anthropic API key**, stored in the macOS Keychain via `KeychainStore` (`kSecClassGenericPassword`, service `dev.claudegauge.app`, account `anthropic-api-key`) — entered in `SettingsView` and never logged or synced. Used only when step 1 finds nothing; sent as `x-api-key: <token>`, tagged `.manualAPIKey`. Because this is a different Anthropic product (pay-as-you-go, not a Pro/Max/Team subscription), it produces the *other* rate-limit header shape — see §2 step 4 — so the resulting snapshot is tagged `kind: .classicAPIKey` and the UI shows "Tokens"/"Requests" instead of "Session"/"Weekly".
 
 3. **Neither present** → `UsageProviderError.noCredentials` is thrown, `UsageModel` surfaces it as `lastErrorMessage`, and the popover shows the error banner instead of updating the snapshot. The *previous* successful `UsageSnapshot` (if any) is left in place in `SharedStorage` — a fetch failure never blanks out the last known-good reading, so the widget keeps showing the last real number rather than flipping to empty.
 

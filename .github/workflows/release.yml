@@ -1,0 +1,55 @@
+name: Release
+
+# Triggered by pushing a version tag, e.g.:
+#   git tag -a v0.2.0 -m "v0.2.0"
+#   git push origin v0.2.0
+#
+# Builds an UNSIGNED DMG (CI has no Apple Developer team — see
+# DISTRIBUTION.md) and attaches it to a GitHub Release for that tag. This
+# is a convenience for future releases; v0.1.0 itself was built and
+# published locally with personal-team signing via Scripts/build-dmg.sh,
+# which produces a somewhat better Gatekeeper outcome than a fully
+# unsigned CI build (see DISTRIBUTION.md's Gatekeeper notes). Update the
+# Homebrew tap (Bajnok11/homebrew-claudegauge) with the new version/sha256
+# separately after a release is published — that step isn't automated yet.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest available Xcode
+        run: |
+          LATEST=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then
+            sudo xcode-select -s "$LATEST/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: Build unsigned DMG
+        env:
+          UNSIGNED: "1"
+        run: ./Scripts/build-dmg.sh
+
+      - name: Compute checksum
+        id: sha
+        run: |
+          FILE=$(ls build/ClaudeGauge-*.dmg)
+          echo "path=$FILE" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(shasum -a 256 "$FILE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" "${{ steps.sha.outputs.path }}" \
+            --title "ClaudeGauge ${{ github.ref_name }}" \
+            --notes "Unsigned CI build — not notarized (no paid Apple Developer account yet, see DISTRIBUTION.md). Gatekeeper will reject this on first launch; either install via \`brew tap Bajnok11/claudegauge && brew install --cask claudegauge\` (handles it automatically) or see the README's Gatekeeper note for the manual override. SHA-256: \`${{ steps.sha.outputs.sha256 }}\`"
