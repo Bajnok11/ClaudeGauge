@@ -1,0 +1,63 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  core-tests:
+    name: ClaudeGaugeCore tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest available Xcode
+        run: |
+          LATEST=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then
+            sudo xcode-select -s "$LATEST/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: swift test
+        working-directory: ClaudeGaugeCore
+        run: swift test
+
+  app-build:
+    name: Build app + widget (unsigned)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest available Xcode
+        run: |
+          LATEST=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then
+            sudo xcode-select -s "$LATEST/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # CI has no Apple Developer team or certificates, so this builds
+      # unsigned. It still exercises the full target graph (app + widget
+      # extension + local package) and catches compile breakage; actual
+      # signed/notarized builds are a local-machine (or future release
+      # pipeline) concern — see DISTRIBUTION.md.
+      - name: Build (unsigned)
+        run: |
+          xcodebuild \
+            -project ClaudeGauge.xcodeproj \
+            -scheme ClaudeGauge \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build

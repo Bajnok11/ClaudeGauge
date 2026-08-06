@@ -1,0 +1,58 @@
+import Foundation
+
+/// The one-way handoff between the menu bar app (writer) and the widget
+/// extension (reader). The app fetches from Anthropic and calls `write`,
+/// then tells WidgetKit to reload; the widget's `TimelineProvider` only
+/// ever calls `read` — it never touches the network itself, which keeps it
+/// within WidgetKit's tight background execution budget and means a widget
+/// can never disagree with the menu bar about what's "live".
+public struct SharedStorage: Sendable {
+    public static let appGroupIdentifier = "group.dev.claudegauge.shared"
+    private static let snapshotKey = "usageSnapshot"
+    private static let refreshIntervalKey = "refreshIntervalSeconds"
+
+    private let defaults: UserDefaults?
+
+    public init(appGroupIdentifier: String = SharedStorage.appGroupIdentifier) {
+        self.defaults = UserDefaults(suiteName: appGroupIdentifier)
+    }
+
+    public func write(_ snapshot: UsageSnapshot) {
+        guard let data = try? JSONEncoder.claudeGauge.encode(snapshot) else { return }
+        defaults?.set(data, forKey: Self.snapshotKey)
+    }
+
+    public func read() -> UsageSnapshot? {
+        guard let data = defaults?.data(forKey: Self.snapshotKey) else { return nil }
+        return try? JSONDecoder.claudeGauge.decode(UsageSnapshot.self, from: data)
+    }
+
+    /// So the widget's `TimelineProvider` can schedule its next entry in
+    /// step with however often the app is actually refreshing, instead of
+    /// guessing at a fixed cadence.
+    public func writeRefreshInterval(_ seconds: TimeInterval) {
+        defaults?.set(seconds, forKey: Self.refreshIntervalKey)
+    }
+
+    public func readRefreshInterval() -> TimeInterval? {
+        guard let defaults, defaults.object(forKey: Self.refreshIntervalKey) != nil else { return nil }
+        let value = defaults.double(forKey: Self.refreshIntervalKey)
+        return value > 0 ? value : nil
+    }
+}
+
+extension JSONEncoder {
+    static let claudeGauge: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+}
+
+extension JSONDecoder {
+    static let claudeGauge: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+}

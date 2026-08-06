@@ -1,0 +1,78 @@
+name: ClaudeGauge
+options:
+  bundleIdPrefix: dev.claudegauge
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  usesTabs: false
+  indentWidth: 4
+  tabWidth: 4
+
+packages:
+  ClaudeGaugeCore:
+    path: ClaudeGaugeCore
+
+targets:
+  ClaudeGauge:
+    type: application
+    platform: macOS
+    sources:
+      - path: ClaudeGauge
+      - path: Shared
+    dependencies:
+      - package: ClaudeGaugeCore
+      - target: ClaudeGaugeWidget
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.claudegauge.app
+        PRODUCT_NAME: ClaudeGauge
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_CFBundleDisplayName: ClaudeGauge
+        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 ClaudeGauge contributors. Not affiliated with or endorsed by Anthropic."
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 48MQ7BVS99
+        CODE_SIGN_ENTITLEMENTS: ClaudeGauge/ClaudeGauge.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+  ClaudeGaugeWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: ClaudeGaugeWidget
+      - path: Shared
+    dependencies:
+      - package: ClaudeGaugeCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.claudegauge.app.widget
+        PRODUCT_NAME: ClaudeGaugeWidget
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: ClaudeGaugeWidget/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 48MQ7BVS99
+        CODE_SIGN_ENTITLEMENTS: ClaudeGaugeWidget/ClaudeGaugeWidget.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+schemes:
+  ClaudeGauge:
+    build:
+      targets:
+        ClaudeGauge: all
+        ClaudeGaugeWidget: all
+    run:
+      config: Debug
+    archive:
+      config: Release
