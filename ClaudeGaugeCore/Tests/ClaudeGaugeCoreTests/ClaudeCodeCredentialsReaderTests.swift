@@ -31,8 +31,13 @@ final class ClaudeCodeCredentialsReaderTests: XCTestCase {
         XCTAssertNil(ClaudeCodeCredentialsReader.parse(data: Data("not json".utf8)))
     }
 
-    func testReadFromMissingFileReturnsNil() {
-        let missing = URL(fileURLWithPath: "/tmp/does-not-exist-\(UUID().uuidString).json")
-        XCTAssertNil(ClaudeCodeCredentialsReader.read(from: missing))
+    func testReadFromMissingFileAndMissingKeychainItemReturnsNil() {
+        // Both the file path AND the Keychain service name are isolated
+        // per-test-run values, so this can't accidentally pass by reading
+        // whatever the real Claude Code login on the machine running the
+        // test happens to be.
+        let missingFile = URL(fileURLWithPath: "/tmp/does-not-exist-\(UUID().uuidString).json")
+        let missingService = "dev.claudegauge.tests.no-such-service-\(UUID().uuidString)"
+        XCTAssertNil(ClaudeCodeCredentialsReader.read(from: missingFile, keychainService: missingService))
     }
 }
