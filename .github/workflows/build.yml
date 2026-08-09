@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets the build be kicked off by hand from the Actions tab, which is
+  # also the quickest way to confirm Actions is enabled at all on a fork.
+  workflow_dispatch:
 
 jobs:
   core-tests:
