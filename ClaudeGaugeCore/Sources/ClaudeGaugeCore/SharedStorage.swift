@@ -6,16 +6,23 @@ import Foundation
 /// ever calls `read` — it never touches the network itself, which keeps it
 /// within WidgetKit's tight background execution budget and means a widget
 /// can never disagree with the menu bar about what's "live".
+///
+/// Preferences ride the same channel so the widget renders with the user's
+/// chosen thresholds and accent without either target having to duplicate
+/// defaults or key names.
 public struct SharedStorage: Sendable {
     public static let appGroupIdentifier = "group.dev.claudegauge.shared"
     private static let snapshotKey = "usageSnapshot"
     private static let refreshIntervalKey = "refreshIntervalSeconds"
+    private static let preferencesKey = "preferences"
 
     private let defaults: UserDefaults?
 
     public init(appGroupIdentifier: String = SharedStorage.appGroupIdentifier) {
         self.defaults = UserDefaults(suiteName: appGroupIdentifier)
     }
+
+    // MARK: - Snapshot
 
     public func write(_ snapshot: UsageSnapshot) {
         guard let data = try? JSONEncoder.claudeGauge.encode(snapshot) else { return }
@@ -26,6 +33,27 @@ public struct SharedStorage: Sendable {
         guard let data = defaults?.data(forKey: Self.snapshotKey) else { return nil }
         return try? JSONDecoder.claudeGauge.decode(UsageSnapshot.self, from: data)
     }
+
+    // MARK: - Preferences
+
+    public func writePreferences(_ preferences: Preferences) {
+        guard let data = try? JSONEncoder.claudeGauge.encode(preferences.normalized()) else { return }
+        defaults?.set(data, forKey: Self.preferencesKey)
+    }
+
+    /// Never returns nil: a widget with no stored preferences yet should
+    /// render with defaults rather than refuse to draw.
+    public func readPreferences() -> Preferences {
+        guard
+            let data = defaults?.data(forKey: Self.preferencesKey),
+            let decoded = try? JSONDecoder.claudeGauge.decode(Preferences.self, from: data)
+        else {
+            return .default
+        }
+        return decoded.normalized()
+    }
+
+    // MARK: - Refresh cadence
 
     /// So the widget's `TimelineProvider` can schedule its next entry in
     /// step with however often the app is actually refreshing, instead of

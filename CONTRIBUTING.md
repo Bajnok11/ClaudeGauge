@@ -47,7 +47,7 @@ cd ClaudeGaugeCore
 swift test
 ```
 
-This is fast, makes no network calls, and is safe to run in CI or in a sandboxed environment. If you're touching anything in `ClaudeGaugeCore/Sources`, run this before opening a PR. If you're adding new behavior there, add or extend an `XCTest` case alongside it — that's where all 28 current tests live (`ClaudeGaugeCore/Tests/ClaudeGaugeCoreTests/`).
+This is fast, makes no network calls, and is safe to run in CI or in a sandboxed environment. If you're touching anything in `ClaudeGaugeCore/Sources`, run this before opening a PR. If you're adding new behavior there, add or extend an `XCTest` case alongside it — that's where all 65 current tests live (`ClaudeGaugeCore/Tests/ClaudeGaugeCoreTests/`).
 
 ## Code style
 
@@ -65,8 +65,14 @@ None of this is enforced by tooling today, so it's on code review (yours and rev
 If you're looking for something scoped enough to be a first contribution, a few areas stand out:
 
 - **UI polish** in `MenuBarView.swift`, `SettingsView.swift`, or the shared `GaugeDial`/`UsageStatus+Color` views in `Shared/`. These are small SwiftUI files and a good way to get familiar with how the app, widget, and popover all share the same rendering code.
-- **A new `UsageProvider`** for another AI coding tool (Codex, Gemini, etc.), per the multi-provider item in [ROADMAP.md](ROADMAP.md). `UsageProvider` is already a protocol specifically so this is a new conformance rather than a rework — look at `ClaudeRateLimitProvider.swift` in `ClaudeGaugeCore` as the reference implementation (credential resolution, network call, header parsing into a `UsageSnapshot`).
-- **A History/Charts view** in the app that surfaces `TranscriptLogParser.dailyUsage()`. The parser and its tests already exist and work (it walks `~/.claude/projects/**/*.jsonl` and rolls up daily token totals) — it's just not wired into any screen yet. This is a self-contained UI task: no new data plumbing needed, just consuming an existing, tested model.
+- **A new `UsageProvider`** for another AI coding tool (Gemini CLI, Copilot, …), per the providers item in [ROADMAP.md](ROADMAP.md). `UsageProvider` is a protocol specifically so this is a new conformance rather than a rework. `CodexQuotaProvider.swift` is the best template if the tool writes quota to local files (no credentials at all), and `ClaudeRateLimitProvider.swift` if it needs an authenticated request. **Even without writing code, a sample of where your tool stores its local quota state is genuinely useful** — the reason Gemini and Copilot aren't supported is that we can't verify their formats first-hand, and guessing produces an integration that reports wrong numbers.
+- **Cost estimation**, deliberately unimplemented so far. `TranscriptLogParser` already produces exact per-day, per-model-agnostic token counts; the missing piece is a pricing source that can be kept current without silently going stale. A proposal for how to source and update it is more valuable than the code.
+- **A SwiftLint/SwiftFormat config** encoding the conventions above.
+
+### Two things worth knowing before you touch the tests
+
+- **Anything reading the Keychain must take an injectable service name.** An early version of the credential tests didn't, and silently read the real Claude Code login of whoever ran them — machine-dependent, and it printed a live OAuth token into the log on failure. See `ClaudeRateLimitProvider(keychainService:)` and how `CredentialResolutionTests` passes a UUID that can't exist.
+- **Screenshots run on sample data, not yours.** `./Scripts/render-screenshots.sh` launches the app with an `isSample` model that disables polling, Keychain reads, and transcript parsing. If you add a view that loads data in `.task`, guard it the same way — otherwise regenerating the README images publishes your own project names.
 
 If you want to work on something not listed here (including in [DISTRIBUTION.md](DISTRIBUTION.md)'s notarization/CI roadmap), opening an issue first to talk through the approach is a good idea before sinking time into a PR — especially for anything that touches signing, entitlements, or the shared App Group, since those are easy to get subtly wrong.
 

@@ -14,7 +14,23 @@ ClaudeGauge/
   ClaudeGaugeWidget/      → widget extension   (type: app-extension)
   ClaudeGaugeCore/        → local Swift package (framework-free of SwiftUI)
   Shared/                 → plain source files compiled into BOTH app + widget
+  Scripts/                → icon generation, DMG packaging, screenshot pipeline
 ```
+
+Inside `ClaudeGaugeCore/Sources/ClaudeGaugeCore`:
+
+| File | Responsibility |
+|---|---|
+| `UsageProvider.swift` | The protocol every provider conforms to, plus the typed error set. |
+| `ClaudeRateLimitProvider.swift` | Claude: credential resolution (see §4) and the rate-limit-header request. |
+| `CodexQuotaProvider.swift` | Codex: parses quota out of the CLI's own local rollout transcripts. |
+| `RateLimitHeaders.swift` | Pure parsing of both Anthropic header shapes. |
+| `UsageSnapshot.swift` | The `Codable` reading, `AccountInfo`, and `UsageStatus` thresholds. |
+| `Preferences.swift` | Everything user-configurable, as one `Codable` blob. |
+| `NotificationPolicy.swift` | Decides *which* alerts to fire; owns the anti-spam rule. |
+| `SharedStorage.swift` | The App Group channel between app and widget. |
+| `KeychainStore.swift` | The app's own API-key entry. |
+| `TranscriptLogParser.swift` | Local daily + per-project token rollups. |
 
 **`ClaudeGauge`** (the app target) is a `MenuBarExtra`-based SwiftUI app (`ClaudeGaugeApp.swift`). It's the only thing that ever talks to the network, owns the poll loop (`UsageModel`), renders the popover (`MenuBarView`, `MenuBarLabel`), and hosts settings (`SettingsView`). `LSUIElement = YES`, so it never shows a Dock icon.
 
@@ -24,7 +40,9 @@ ClaudeGauge/
 
 ### Why split it this way
 
-- **Testability.** `ClaudeGaugeCore` has zero UIKit/SwiftUI/WidgetKit dependencies, so `cd ClaudeGaugeCore && swift test` runs in well under a second, needs no simulator, no network, and no signing — it's the part of the codebase that's actually safe to iterate on quickly and run in CI. The 28 XCTest cases in `ClaudeGaugeCore/Tests/ClaudeGaugeCoreTests` cover both rate-limit header shapes (see §2, step 4), both credential-file schemas, JSONL parsing, `UsageSnapshot`'s label/status derivation, and `SharedStorage` round-tripping, entirely against synthetic data.
+- **Testability.** `ClaudeGaugeCore` has zero UIKit/SwiftUI/WidgetKit dependencies, so `cd ClaudeGaugeCore && swift test` runs in well under a second, needs no simulator, no network, and no signing — it's the part of the codebase that's actually safe to iterate on quickly and run in CI. The 65 XCTest cases in `ClaudeGaugeCore/Tests/ClaudeGaugeCoreTests` cover both rate-limit header shapes (see §2, step 4), credential precedence and expiry (§4), both credential-file schemas, JSONL and per-project parsing, Codex quota parsing, notification edge-detection, preferences normalization, and `SharedStorage` round-tripping — entirely against synthetic data.
+
+  One rule worth stating explicitly, because breaking it is subtle: **anything that reads the Keychain takes an injectable service name.** An early version of the credential tests didn't, so they silently read the real Claude Code login of whoever ran the suite — which made them machine-dependent and, on assertion failure, printed a live OAuth token into the test log. `ClaudeRateLimitProvider.init` therefore takes `keychainService:`, and tests pass a UUID that cannot exist.
 - **The widget and the app must share logic without duplicating it.** WidgetKit extensions are separate processes from the host app, with their own binary and their own execution budget. If `ClaudeRateLimitProvider` or `RateLimitHeaders.parse` lived only in the app target, the widget would either need a second network stack (defeating the "widget never touches the network" design in §2) or a copy-pasted parser that would silently drift out of sync the first time one of the two got a bugfix. Putting that logic in a package both targets link means there is one implementation, one set of tests, and one place to fix a bug.
 - **`UsageProvider` is a protocol, not a concrete type**, specifically so that `ClaudeRateLimitProvider` is a *conformance*, not the whole story — see `ClaudeGaugeCore/Sources/ClaudeGaugeCore/UsageProvider.swift`. A future Codex/Gemini provider is new code, not a rewrite of every screen that consumes usage data (see [ROADMAP.md](ROADMAP.md)).
 
@@ -117,6 +135,18 @@ macOS enforces an asymmetry here that shapes the entitlements directly:
 
 `ClaudeRateLimitProvider.fetchSnapshot()` resolves credentials fresh on every call, in this order:
 
+The order isn't fixed — it's driven by `Preferences.credentialSource`, which the user sets in **Settings → General**:
+
+| `CredentialSource` | Behavior |
+|---|---|
+| `.automatic` (default) | Claude Code login if present **and unexpired**, else the API key. |
+| `.claudeCodeOnly` | Only the CLI login; throws rather than falling back. |
+| `.apiKeyOnly` | Only the saved key, even when a CLI login exists. |
+
+This enum exists because of a real defect: before v0.2 the provider unconditionally preferred the Claude Code login, so a user who deliberately pasted an API key had it silently ignored, with no indication anywhere in the UI. Worse, when that CLI token later expired, every refresh failed with a 401 even though a perfectly good API key was sitting in the Keychain. `.automatic` now checks the token's own `expiresAt` before using it — catching expiry **without** spending a doomed network round-trip — and hands over to the key when it's stale.
+
+Within that, the two credentials resolve as follows:
+
 1. **The Claude Code CLI's own OAuth login**, read by `ClaudeCodeCredentialsReader.read(from:keychainService:)`, which itself tries two places — because where Claude Code stores this has changed across versions, and an earlier version of this reader that only checked the file reported "no credentials found" for anyone on a current Claude Code install, even though they *were* logged in:
    - **Primary: the macOS Keychain**, service name `"Claude Code-credentials"` — where Claude Code 2.x actually stores it today. Read-only; ClaudeGauge never writes to this entry, it's not ClaudeGauge's to manage.
    - **Fallback: `~/.claude/.credentials.json`** — the plaintext file older Claude Code releases (and non-macOS installs) used.
@@ -135,13 +165,23 @@ A `401`/`403` response from Anthropic short-circuits straight to `.noCredentials
 
 ## 5. The `Shared/` folder pattern
 
-`Shared/GaugeDial.swift`, `Shared/UsageStatus+Color.swift`, and `Shared/ResetTimeFormatter.swift` are **plain source files added to both targets' `sources:` list in `project.yml`** (`ClaudeGauge:` lists `path: Shared`, `ClaudeGaugeWidget:` lists `path: Shared`) — they are compiled twice, once into each target's binary. This is deliberately not a fourth framework/package target.
+`Shared/GaugeDial.swift`, `Shared/Sparkline.swift`, `Shared/WidgetContentView.swift`, `Shared/UsageStatus+Color.swift`, and `Shared/ResetTimeFormatter.swift` are **plain source files added to both targets' `sources:` list in `project.yml`** (`ClaudeGauge:` lists `path: Shared`, `ClaudeGaugeWidget:` lists `path: Shared`) — they are compiled twice, once into each target's binary. This is deliberately not a fourth framework/package target.
 
 Why source-sharing instead of another SwiftPM package or embedded framework:
 
 - These files *are* SwiftUI (`GaugeDial` is a `View`; `UsageStatus+Color` extends `UsageStatus` with a `Color`), so they can't live in `ClaudeGaugeCore`, which is kept SwiftUI-free on purpose (§1).
 - A widget extension embeds its own copy of any framework it links anyway (extensions don't share a process or a loaded-framework cache with the host app), so a separate framework target would buy no runtime sharing — only extra build graph complexity — over just compiling the same three small files into both targets.
 - Correctness matters more than DRY-purity here: `GaugeDial` is the *only* place the ring/percentage layout is drawn, and `UsageStatus+Color` is the *only* place the green/yellow/red thresholds map to actual `Color` values. `MenuBarView` and `ClaudeGaugeWidgetView` both render through `GaugeDial`, so the popover and the widget are structurally incapable of drifting apart visually — there's one view implementation, not two hand-kept-in-sync ones. Same logic for `ResetTimeFormatter.string(fromMinutes:)`, which both surfaces use to render "resets in 2h 15m"-style strings.
+- `WidgetContentView` lives here for the same reason plus one more: the app renders the widget layouts for the README screenshots (§7). Keeping the layout in `Shared/` and leaving `ClaudeGaugeWidgetView` as a five-line adapter over WidgetKit's entry/intent types means the documented widget and the shipped widget are the same code by construction.
+
+## 7. The screenshot pipeline
+
+`Scripts/render-screenshots.sh` regenerates every image in the README, using two mechanisms because neither covers the whole app:
+
+- **`ImageRenderer`, offscreen** (`ClaudeGauge/ScreenshotRenderer.swift`) for the popover, the widget sizes, and the animated GIF. The popover belongs to an `LSUIElement` agent app — there's no window to capture and no Dock icon to click — and widgets live inside Notification Center. The GIF is assembled frame-by-frame through ImageIO rather than screen-recorded, which keeps it cursor-free and reproducible.
+- **Real window capture** (`screencapture -l`, with window IDs from `Scripts/window-capture.swift`) for History and Settings. Those are built from AppKit-backed SwiftUI — `Table`, `Form`, `TabView` — which `ImageRenderer` can only draw as a yellow placeholder. The alternative would have been re-implementing them as hand-rolled SwiftUI so the renderer could handle them; that was rejected deliberately, because it means shipping a less native app to serve the README.
+
+Both paths run against `UsageModel.sample(...)`, never the live model, guarded by an `isSample` flag that also disables `loadHistory()`, polling, and Keychain reads. That isn't cosmetic: a live run would put the machine's own project names, token counts, and a populated API-key field into images destined for a public repo, so anyone regenerating the screenshots would publish their own data.
 
 ## 6. Local transcript parsing (`TranscriptLogParser`)
 
