@@ -10,7 +10,13 @@ import Foundation
 /// Preferences ride the same channel so the widget renders with the user's
 /// chosen thresholds and accent without either target having to duplicate
 /// defaults or key names.
-public struct SharedStorage: Sendable {
+/// `@unchecked Sendable` rather than plain `Sendable`: the only stored
+/// property is a `UserDefaults`, which Apple documents as thread-safe but
+/// hasn't annotated as `Sendable`. Declaring plain conformance compiles
+/// today with a warning that the Swift 6 language mode turns into an
+/// error — so this states the guarantee explicitly instead of leaving a
+/// build break waiting on the next toolchain.
+public struct SharedStorage: @unchecked Sendable {
     public static let appGroupIdentifier = "group.dev.claudegauge.shared"
     private static let snapshotKey = "usageSnapshot"
     private static let refreshIntervalKey = "refreshIntervalSeconds"

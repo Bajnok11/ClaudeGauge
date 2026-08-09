@@ -2,7 +2,17 @@ import Foundation
 import SwiftUI
 import WidgetKit
 import ServiceManagement
-import UserNotifications
+// `@preconcurrency` because UserNotifications hasn't been audited for
+// Sendable: `UNUserNotificationCenter.notificationSettings()` returns a
+// non-Sendable `UNNotificationSettings`, which Swift 6 rejects when it
+// crosses an isolation boundary. Only `authorizationStatus` (a plain enum)
+// is ever read from it here, so nothing non-Sendable actually escapes —
+// this downgrades the diagnostic rather than papering over a real race.
+//
+// Worth knowing: Xcode 26 accepts this code without the attribute while
+// the Xcode 16 toolchain on CI does not, so building green locally is not
+// evidence it builds on someone else's machine.
+@preconcurrency import UserNotifications
 import ClaudeGaugeCore
 
 /// The app's single source of truth: owns the poll loop, talks to the
