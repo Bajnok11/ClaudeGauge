@@ -31,6 +31,12 @@ struct ClaudeGaugeApp: App {
 /// Handles the two things SwiftUI's `App` lifecycle can't express: a launch
 /// that renders assets and exits, and a launch that opens its windows so an
 /// external script can screenshot them.
+///
+/// Everything touching `NSApp` below is explicitly `@MainActor`. Swift 6.2+
+/// (Xcode 26) infers main-actor isolation for this kind of code and compiles
+/// it without the annotations; Swift 6.0 (the Xcode 16 toolchain the README
+/// claims support for, and what CI builds with) does not. Being explicit is
+/// what makes the project actually build on the versions it says it supports.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Opens the History and Settings windows, for `Scripts/render-screenshots.sh`.
     static let openWindowsArgument = "--open-windows"
@@ -43,15 +49,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     ScreenshotRenderer.renderAll(into: outputDirectory)
+                    NSApp.terminate(nil)
                 }
-                NSApp.terminate(nil)
             }
             return
         }
 
         if CommandLine.arguments.contains(Self.openWindowsArgument) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                Self.openCaptureWindows()
+                MainActor.assumeIsolated {
+                    Self.openCaptureWindows()
+                }
             }
         }
     }
@@ -60,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// installs for them. Going through the menu (rather than reaching for
     /// `openWindow`, which is only available inside a `View`/`Scene`) keeps
     /// this to public AppKit API and works from the app delegate.
+    @MainActor
     private static func openCaptureWindows() {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -81,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Case-insensitive substring match, so "Settings" finds the real item
     /// title "Settings…" (which ends in a U+2026 ellipsis, not three dots).
+    @MainActor
     @discardableResult
     private static func performMenuItem(matching needle: String) -> Bool {
         guard let mainMenu = NSApp.mainMenu else { return false }

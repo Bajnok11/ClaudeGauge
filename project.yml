@@ -8,6 +8,16 @@ options:
   indentWidth: 4
   tabWidth: 4
 
+# Project-wide. Swift 6.2+ (Xcode 26) infers main-actor isolation for a lot
+# of app code that Swift 6.0 (Xcode 16 — the minimum this project claims to
+# support, and what CI builds with) requires you to annotate. Left to the
+# toolchain default, a build that's green on a new Xcode can fail on a
+# supported one; pinning `nonisolated` makes local builds use the same rules
+# as CI, so that drift shows up here instead of in a pull request.
+settings:
+  base:
+    SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+
 packages:
   ClaudeGaugeCore:
     path: ClaudeGaugeCore
